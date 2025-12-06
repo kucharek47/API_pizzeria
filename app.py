@@ -26,6 +26,7 @@ class User(db.Model):
     kod_pocztowy = db.Column(db.String(6))
     ulica = db.Column(db.String(50))
     orders = db.relationship('Order', backref='customer', lazy=True)
+    koszyk = db.Column(db.String(1200))
 
 
 class Order(db.Model):
@@ -48,7 +49,6 @@ with app.app_context():
         test_user = User(cookies='test')
         db.session.add(test_user)
         db.session.commit()
-        print(">>> Stworzono testowego użytkownika (ID: 1)")
 
 @app.route("/api/start", methods=["POST"])
 def start_app_router():
@@ -81,6 +81,39 @@ def menu_app_router():
             'obrazek_path': danie.obrazek_path
         })
     return jsonify(wynik)
+@app.route("/api/dodaj_do_koszyka", methods=["POST"])
+def dodaj_do_koszyka_app_router():
+    token = request.cookies.get('session_token')
+    if token:
+        uzytwkonik = User.query.filter_by(cookies=token).first()
+        if uzytwkonik:
+            dane = request.get_json()
+            try:
+                cena = (dane["rozmiar"] * 10 + 20) + ((dane["ciasto"] - 1) * 5) + (
+                    len(dane["skladniki"]) * 3 if dane["rozmiar"] <= 1 else 4)
+            except KeyError:
+                return jsonify({"error_cookies": False, "powod": "blad skladni"}), 400
+            print(uzytwkonik.koszyk)
+            koszyk = json.loads(uzytwkonik.koszyk) if uzytwkonik.koszyk else {}
+            koszyk[datetime.now().strftime("%Y-%m-%d-%H:%M:%S")] = {
+                'status': 'w koszyku',
+                'oplacone': False,
+                'skladnikiD': dane["skladniki"],
+                'rozmiar': dane["rozmiar"],
+                'ciasto': dane["ciasto"],
+                'sos': dane["sos"],
+                'wartosc': cena
+            }
+            uzytwkonik.koszyk = json.dumps(koszyk)
+            db.session.commit()
+            wartosc = 0
+            for x in koszyk:
+                wartosc += koszyk[x]["wartosc"]
+            return jsonify({"error_cookies": False,"wartosc_koszyka":wartosc})
+        else:
+            return jsonify({"error_cookies": True, "powod": "brak cookies w bazie"}),401
+    else:
+        return jsonify({"error_cookies": True, "powod": "brak cookies"}),401
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000, host="0.0.0.0")
+    app.run(debug=True, port=5000, host="0.0.0.0",use_reloader=True)
