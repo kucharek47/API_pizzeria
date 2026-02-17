@@ -153,6 +153,44 @@ def usun_z_koszyka_app_router():
     else:
         return jsonify({"error_cookies": True, "powod": "brak cookies"}), 401
 
+
+@app.route("/api/zloz_zamowienie", methods=["POST"])
+def zloz_zamowienie_app_router():
+    token = request.cookies.get('session_token')
+
+    if token:
+        uzytkownik = User.query.filter_by(cookies=token).first()
+        if uzytkownik:
+            dane = request.get_json()
+            koszyk_string = uzytkownik.koszyk
+
+            if not koszyk_string or koszyk_string == '{}':
+                return jsonify({"error_cookies": False, "powod": "koszyk jest pusty"}), 400
+
+            koszyk = json.loads(koszyk_string)
+            calkowita_cena = sum(pozycja.get("wartosc", 0) for pozycja in koszyk.values())
+
+            nowe_zamowienie = Order(
+                pizza_json=koszyk_string,
+                price=calkowita_cena,
+                user_id=uzytkownik.id
+            )
+
+            if dane:
+                uzytkownik.telefon = dane.get("telefon", uzytkownik.telefon)
+                uzytkownik.ulica = dane.get("adres", uzytkownik.ulica)
+
+            uzytkownik.koszyk = "{}"
+
+            db.session.add(nowe_zamowienie)
+            db.session.commit()
+
+            return jsonify({"error_cookies": False})
+        else:
+            return jsonify({"error_cookies": True, "powod": "brak cookies w bazie"}), 401
+    else:
+        return jsonify({"error_cookies": True, "powod": "brak cookies"}), 401
+
 @app.route('/')
 def index():
     return render_template('index.html')
