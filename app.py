@@ -1,16 +1,18 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, render_template, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from datetime import datetime
 import secrets
 import json
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='static', template_folder='templates')
 
 CORS(app, supports_credentials=True, origins=[
     "http://localhost:4200",
     "http://127.0.0.1:4200",
-    "http://192.168.10.149:4200"
+    "http://192.168.10.149:4200",
+    "http://192.168.10.191:4200",
+    "http://192.168.10.194:4200"
 ])
 
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///pizzeria.db'
@@ -22,12 +24,11 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     cookies = db.Column(db.String(120), unique=True, nullable=False)
     telefon = db.Column(db.String(12))
-    miasto = db.Column(db.String(43)) #Wólka Sokołowska koło Wólki Niedźwiedzkiej
+    miasto = db.Column(db.String(43))
     kod_pocztowy = db.Column(db.String(6))
     ulica = db.Column(db.String(50))
     orders = db.relationship('Order', backref='customer', lazy=True)
     koszyk = db.Column(db.String(1200))
-
 
 class Order(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -59,6 +60,7 @@ def start_app_router():
     db.session.add(nowy)
     db.session.commit()
     return jsonify({"cookies":token})
+
 @app.route("/api/check_cookiess", methods=["POST"])
 def check_cookies_app_router():
     token = request.cookies.get('session_token')
@@ -69,6 +71,7 @@ def check_cookies_app_router():
             return jsonify({"error_cookies": True, "powod": "brak cookies w bazie"})
     else:
         return jsonify({"error_cookies": True, "powod": "brak cookies"})
+
 @app.route("/api/menu", methods=["GET"])
 def menu_app_router():
     wszystkie_dania = Menu.query.all()
@@ -81,6 +84,7 @@ def menu_app_router():
             'obrazek_path': danie.obrazek_path
         })
     return jsonify(wynik)
+
 @app.route("/api/dodaj_do_koszyka", methods=["POST"])
 def dodaj_do_koszyka_app_router():
     token = request.cookies.get('session_token')
@@ -115,5 +119,47 @@ def dodaj_do_koszyka_app_router():
     else:
         return jsonify({"error_cookies": True, "powod": "brak cookies"}),401
 
+@app.route("/api/pobierz_koszyk", methods=["GET"])
+def pobierz_koszyk_app_router():
+    token = request.cookies.get('session_token')
+    if token:
+        uzytwkonik = User.query.filter_by(cookies=token).first()
+        if uzytwkonik:
+            koszyk = json.loads(uzytwkonik.koszyk) if uzytwkonik.koszyk else {}
+            return jsonify({"error_cookies": False, "koszyk": koszyk})
+        else:
+            return jsonify({"error_cookies": True, "powod": "brak cookies w bazie"}), 401
+    else:
+        return jsonify({"error_cookies": True, "powod": "brak cookies"}), 401
+
+@app.route("/api/usun_z_koszyka", methods=["POST"])
+def usun_z_koszyka_app_router():
+    token = request.cookies.get('session_token')
+    if token:
+        uzytwkonik = User.query.filter_by(cookies=token).first()
+        if uzytwkonik:
+            dane = request.get_json()
+            klucz_do_usuniecia = dane.get("id_pozycji")
+            koszyk = json.loads(uzytwkonik.koszyk) if uzytwkonik.koszyk else {}
+
+            if klucz_do_usuniecia in koszyk:
+                del koszyk[klucz_do_usuniecia]
+                uzytwkonik.koszyk = json.dumps(koszyk)
+                db.session.commit()
+
+            return jsonify({"error_cookies": False})
+        else:
+            return jsonify({"error_cookies": True, "powod": "brak cookies w bazie"}), 401
+    else:
+        return jsonify({"error_cookies": True, "powod": "brak cookies"}), 401
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/<path:path>')
+def static_files(path):
+    return send_from_directory('static', path)
+
 if __name__ == '__main__':
-    app.run(debug=True, port=5000, host="0.0.0.0",use_reloader=True)
+    app.run(debug=True, port=5000, host="0.0.0.0", use_reloader=True)
